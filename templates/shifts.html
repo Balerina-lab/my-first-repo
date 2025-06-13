@@ -1,0 +1,179 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Shifts</h1>
+<div class="mb-3">
+    <form id="shift-form" class="row g-3">
+        <div class="col-md-3">
+            <input type="date" id="shift_start" class="form-control" required>
+        </div>
+        <div class="col-md-3">
+            <input type="date" id="shift_end" class="form-control" required>
+        </div>
+        <div class="col-md-3">
+            <select id="template_name" class="form-select" required>
+                <option value="3-smena">3-smena</option>
+                <option value="4-smena">4-smena</option>
+            </select>
+        </div>
+        <div class="col-12">
+            <button type="submit" class="btn btn-primary">Generate Shifts</button>
+        </div>
+    </form>
+</div>
+<div id="calendar-container" class="table-responsive mb-4">
+    <table class="table table-bordered" id="shift-calendar"></table>
+</div>
+<div id="team-assignments"></div>
+<style>
+    .weekend { background-color: #cce5ff; }
+</style>
+<script>
+const weekdays = ['N','P','U','S','\u010c','P','S'];
+
+function buildCalendar(start, end, shiftCount){
+    const table = document.getElementById('shift-calendar');
+    table.innerHTML = '';
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const days = [];
+    for(let d = new Date(startDate); d <= endDate; d.setDate(d.getDate()+1)){
+        days.push(new Date(d));
+    }
+
+    const header1 = document.createElement('tr');
+    header1.innerHTML = '<th></th>' + days.map(d=>`<th>${d.getDate()}</th>`).join('');
+    table.appendChild(header1);
+
+    const header2 = document.createElement('tr');
+    header2.innerHTML = '<th></th>' + days.map(d=>`<th>${weekdays[d.getDay()]}</th>`).join('');
+    table.appendChild(header2);
+
+    const groups = shiftCount === 4 ? ['A','B','C','D'] : ['A','B','C'];
+
+    if(shiftCount === 3){
+        const pattern = ['I','II','III'];
+        groups.forEach((g, gi)=>{
+            const row = document.createElement('tr');
+            row.innerHTML = `<th>${g}</th>`;
+            days.forEach((d)=>{
+                const cell = document.createElement('td');
+                if(d.getDay() === 0 || d.getDay() === 6){
+                    cell.className = 'weekend';
+                } else {
+                    const weekIndex = Math.floor((d - startDate) / (7*24*60*60*1000));
+                    cell.textContent = pattern[(weekIndex + gi) % pattern.length];
+                }
+                row.appendChild(cell);
+            });
+            table.appendChild(row);
+        });
+    } else {
+        const cycle = [
+            {shift:'I', days:4, break:1},
+            {shift:'II', days:4, break:1},
+            {shift:'III', days:4, break:2},
+            {shift:'IV', days:4, break:0},
+        ];
+        const totalDays = days.length;
+        groups.forEach((g, gi)=>{
+            const row = document.createElement('tr');
+            row.innerHTML = `<th>${g}</th>`;
+            let schedule = [];
+            let idx = gi % cycle.length;
+            while(schedule.length < totalDays){
+                for(let i=0;i<cycle[idx].days && schedule.length<totalDays;i++){
+                    schedule.push(cycle[idx].shift);
+                }
+                for(let b=0;b<cycle[idx].break && schedule.length<totalDays;b++){
+                    schedule.push('');
+                }
+                idx = (idx + 1) % cycle.length;
+            }
+            schedule.forEach(sh => {
+                const cell = document.createElement('td');
+                cell.textContent = sh;
+                row.appendChild(cell);
+            });
+            table.appendChild(row);
+        });
+    }
+}
+
+function assignTeams(start, end, shiftCount, employees, vacations){
+    const groups = shiftCount === 4 ? ['A','B','C','D'] : ['A','B','C'];
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    function available(emp){
+        return !vacations.some(v => v.employee_id === emp.id && !(endDate < new Date(v.start_date) || startDate > new Date(v.end_date)));
+    }
+    const pool = employees.filter(available);
+    const leaders = pool.filter(e => e.team_leader);
+    const byPos = {
+        tuber: pool.filter(e => e.position.toLowerCase().includes('tuber') && !e.team_leader),
+        pomocnik: pool.filter(e => e.position.toLowerCase().includes('pomo') && !e.team_leader),
+        botomer: pool.filter(e => e.position.toLowerCase().includes('botomer') && !e.team_leader),
+        pregledac: pool.filter(e => e.position.toLowerCase().includes('pregled') && !e.team_leader),
+    };
+
+    const teams = {};
+    groups.forEach(g => teams[g] = {leader:null, tuber:[], pomocnik:[], botomer:[], pregledac:[]});
+
+    groups.forEach(g => { teams[g].leader = leaders.shift() || null; });
+    ['tuber','pomocnik','botomer','pregledac'].forEach(pos => {
+        groups.forEach(g => {
+            for(let i=0;i<2;i++){
+                if(byPos[pos].length) teams[g][pos].push(byPos[pos].shift());
+            }
+        });
+    });
+    return teams;
+}
+
+function renderTeams(teams){
+    const container = document.getElementById('team-assignments');
+    container.innerHTML = '';
+    Object.entries(teams).forEach(([shift,info])=>{
+        const card = document.createElement('div');
+        card.className = 'mb-3 p-3 border';
+        let valid = info.leader && info.tuber.length===2 && info.pomocnik.length===2 && info.botomer.length===2 && info.pregledac.length===2;
+        if(!valid){
+            card.innerHTML = `<h5>Smena ${shift}</h5><div class="text-danger">Nedovoljno radnika za smenu ${shift}</div>`;
+        }else{
+            const list = `
+                <ul>
+                    <li>Tim lider: ${info.leader.first_name} ${info.leader.last_name}</li>
+                    <li>Operater tuber: ${info.tuber.map(e=>e.first_name+' '+e.last_name).join(', ')}</li>
+                    <li>Pomocnik: ${info.pomocnik.map(e=>e.first_name+' '+e.last_name).join(', ')}</li>
+                    <li>Botomer: ${info.botomer.map(e=>e.first_name+' '+e.last_name).join(', ')}</li>
+                    <li>Pregledac: ${info.pregledac.map(e=>e.first_name+' '+e.last_name).join(', ')}</li>
+                </ul>`;
+            card.innerHTML = `<h5>Smena ${shift}</h5>${list}`;
+        }
+        container.appendChild(card);
+    });
+}
+
+document.getElementById('shift-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const start = document.getElementById('shift_start').value;
+    const end = document.getElementById('shift_end').value;
+    const template = document.getElementById('template_name').value;
+
+    await fetch('/shifts/generate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({start_date:start, end_date:end, template_name:template})
+    });
+
+    const [employees, vacations] = await Promise.all([
+        fetch('/employees').then(r=>r.json()),
+        fetch('/vacations').then(r=>r.json())
+    ]);
+
+    const shiftCount = template === '4-smena' ? 4 : 3;
+    buildCalendar(start, end, shiftCount);
+    const teams = assignTeams(start, end, shiftCount, employees, vacations);
+    renderTeams(teams);
+});
+</script>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Employees</h1>
+<div class="mb-3">
+    <form id="employee-form" class="row g-3">
+        <div class="col-md-4">
+            <input type="text" class="form-control" id="first_name" placeholder="First Name" required>
+        </div>
+        <div class="col-md-4">
+            <input type="text" class="form-control" id="last_name" placeholder="Last Name" required>
+        </div>
+        <div class="col-md-4">
+            <input type="text" class="form-control" id="position" placeholder="Position" required>
+        </div>
+        <div class="col-12">
+            <button type="submit" class="btn btn-primary">Add Employee</button>
+        </div>
+    </form>
+</div>
+<table class="table" id="employees-table">
+    <thead><tr><th>First Name</th><th>Last Name</th><th>Position</th></tr></thead>
+    <tbody></tbody>
+</table>
+<script>
+async function loadEmployees() {
+    const res = await fetch('/employees');
+    const data = await res.json();
+    const tbody = document.querySelector('#employees-table tbody');
+    tbody.innerHTML = '';
+    data.forEach(emp => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${emp.first_name}</td><td>${emp.last_name}</td><td>${emp.position}</td>`;
+        tbody.appendChild(tr);
+    });
+}
+
+document.getElementById('employee-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const payload = {
+        first_name: document.getElementById('first_name').value,
+        last_name: document.getElementById('last_name').value,
+        position: document.getElementById('position').value
+    };
+    const res = await fetch('/employees/add', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+        e.target.reset();
+        loadEmployees();
+    } else {
+        alert('Failed to add employee');
+    }
+});
+
+loadEmployees();
+</script>
+{% endblock %}
