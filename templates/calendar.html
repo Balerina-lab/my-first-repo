@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Vacation Calendar <span id="calendar-year"></span></h1>
+<div class="row mb-3">
+  <div class="col-md-2">
+    <select id="month-select" class="form-select">
+      <option value="7">Jul</option>
+      <option value="8">Avgust</option>
+      <option value="9">Septembar</option>
+    </select>
+  </div>
+  <div class="col-md-3">
+    <select id="position-filter" class="form-select">
+      <option value="">Sve pozicije</option>
+    </select>
+  </div>
+</div>
+<div class="table-responsive">
+  <table class="table table-bordered" id="calendar-table"></table>
+</div>
+<div class="mt-3">
+  <strong>Legend:</strong>
+  <span class="ms-2 position-tuber px-2">Tuber operator</span>
+  <span class="ms-2 position-pomocnik px-2">Assistant</span>
+  <span class="ms-2 position-botomer px-2">Botomer operator</span>
+  <span class="ms-2 position-pregledac px-2">Inspector</span>
+  <span class="ms-2 position-printer px-2">Printer</span>
+</div>
+<style>
+.position-tuber { background-color: #fff3cd; }
+.position-pomocnik { background-color: #ffe5b4; }
+.position-botomer { background-color: #d4edda; }
+.position-pregledac { background-color: #cce5ff; }
+.position-printer { background-color: #e2d6f9; }
+</style>
+<script>
+const weekdays = ['N','P','U','S','\u010c','P','S'];
+const year = new Date().getFullYear();
+document.getElementById('calendar-year').textContent = year;
+let allEmployees = [];
+let allVacations = [];
+
+function positionClass(pos){
+  const p = pos.toLowerCase();
+  if(p.includes('tuber')) return 'position-tuber';
+  if(p.includes('pomo')) return 'position-pomocnik';
+  if(p.includes('botomer')) return 'position-botomer';
+  if(p.includes('pregled')) return 'position-pregledac';
+  if(p.includes('printer')) return 'position-printer';
+  return '';
+}
+
+async function loadData() {
+  const [empRes, vacRes] = await Promise.all([
+    fetch('/employees'),
+    fetch('/vacations')
+  ]);
+  allEmployees = await empRes.json();
+  allVacations = await vacRes.json();
+  populatePositionFilter();
+}
+
+function populatePositionFilter(){
+  const select = document.getElementById('position-filter');
+  const positions = [...new Set(allEmployees.map(e => e.position))].sort();
+  select.innerHTML = '<option value="">Sve pozicije</option>' +
+    positions.map(p=>`<option value="${p}">${p}</option>`).join('');
+}
+
+function buildCalendar(month, year){
+  let employees = allEmployees;
+  const filter = document.getElementById('position-filter').value;
+  if(filter){
+    employees = employees.filter(e => e.position === filter);
+  }
+  const vacations = allVacations;
+  const days = new Date(year, month, 0).getDate();
+  const table = document.getElementById('calendar-table');
+  table.innerHTML = '';
+  const thead = document.createElement('thead');
+  let row = document.createElement('tr');
+  row.innerHTML = '<th>Radnik</th>' + Array.from({length:days},(_,i)=>`<th>${i+1}</th>`).join('');
+  thead.appendChild(row);
+  row = document.createElement('tr');
+  row.innerHTML = '<th>Dan</th>' + Array.from({length:days},(_,i)=>{
+      const d = new Date(year, month-1, i+1);
+      return `<th>${weekdays[d.getDay()]}</th>`;
+  }).join('');
+  thead.appendChild(row);
+  table.appendChild(thead);
+  const tbody = document.createElement('tbody');
+  employees.sort((a,b)=>a.position.localeCompare(b.position));
+  employees.forEach(emp=>{
+    const tr = document.createElement('tr');
+    tr.className = positionClass(emp.position);
+    let cells = `<td>${emp.first_name} ${emp.last_name}</td>`;
+    for(let d=1; d<=days; d++){
+      const ds = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const vac = vacations.find(v=>v.employee_id===emp.id && ds>=v.start_date && ds<=v.end_date);
+      if(vac){
+        cells += '<td class="bg-danger text-white">ODMOR</td>';
+      } else {
+        cells += '<td></td>';
+      }
+    }
+    tr.innerHTML = cells;
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+}
+
+document.getElementById('month-select').addEventListener('change', () => {
+  const month = parseInt(document.getElementById('month-select').value);
+  buildCalendar(month, year);
+});
+
+document.getElementById('position-filter').addEventListener('change', () => {
+  const month = parseInt(document.getElementById('month-select').value);
+  buildCalendar(month, year);
+});
+
+document.addEventListener('DOMContentLoaded', async ()=>{
+  await loadData();
+  const month = parseInt(document.getElementById('month-select').value);
+  buildCalendar(month, year);
+});
+</script>
+{% endblock %}
